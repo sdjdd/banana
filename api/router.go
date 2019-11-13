@@ -9,6 +9,7 @@ func loadRouters(e *echo.Echo) {
 
 	e.GET("/*", handleGetFile)
 	e.POST("/*", handlePostFile)
+	e.DELETE("/*", handleDelFile)
 }
 
 func handleForbidden(c echo.Context) error {

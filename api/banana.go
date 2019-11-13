@@ -2,13 +2,9 @@ package main
 
 import (
 	"crypto/subtle"
-	"io"
-	"io/ioutil"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
-	"sync/atomic"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -21,9 +17,16 @@ type fileInfo struct {
 }
 
 type info struct {
-	Version  string `json:"version"`
-	Capacity int64  `json:"capacity"`
-	Used     int64  `json:"used"`
+	Version  string   `json:"version"`
+	Capacity int64    `json:"capacity"`
+	Used     int64    `json:"used"`
+	User     userInfo `json:"user"`
+}
+
+type userInfo struct {
+	Name   string `json:"name"`
+	Upload bool   `json:"upload"`
+	Delete bool   `json:"delete"`
 }
 
 type msg struct {
@@ -38,11 +41,13 @@ type httpErr struct {
 const version = "v0.0.1-beta"
 
 var (
-	errForbidden    = echo.NewHTTPError(403, httpErr{1, "forbidden"})
-	errCreateRoot   = echo.NewHTTPError(400, httpErr{2, "cannot create /"})
-	errNotExists    = echo.NewHTTPError(404, httpErr{3, "no such file of directiry"})
-	errIsNotDir     = echo.NewHTTPError(400, httpErr{4, "is not directory"})
-	errInsufficient = echo.NewHTTPError(400, httpErr{5, "space is insufficient"})
+	errInternal     = echo.NewHTTPError(500, httpErr{100, "internal server error"})
+	errForbidden    = echo.NewHTTPError(403, httpErr{201, "forbidden"})
+	errCreateRoot   = echo.NewHTTPError(400, httpErr{202, "cannot create /"})
+	errDeleteRoot   = echo.NewHTTPError(400, httpErr{203, "cannot delete /"})
+	errNotExists    = echo.NewHTTPError(404, httpErr{204, "no such file of directiry"})
+	errIsNotDir     = echo.NewHTTPError(400, httpErr{205, "is not directory"})
+	errInsufficient = echo.NewHTTPError(400, httpErr{206, "space is insufficient"})
 )
 
 var used int64
@@ -50,6 +55,8 @@ var used int64
 func main() {
 	e := echo.New()
 	e.HideBanner = true
+	e.Logger.SetHeader("${time_rfc3339} ${level}")
+
 	loadRouters(e)
 
 	e.Use(middleware.BasicAuthWithConfig(
@@ -83,11 +90,7 @@ func getDirSize(path string) (size int64, err error) {
 }
 
 func skipBasicAuth(c echo.Context) bool {
-	if conf.Anonymous.Enable {
-		c.Set("username", "")
-		return true
-	}
-	return false
+	return conf.Anonymous.Enable
 }
 
 func authenticate(username, password string, c echo.Context) (bool, error) {
@@ -99,126 +102,6 @@ func authenticate(username, password string, c echo.Context) (bool, error) {
 		return false, nil
 	}
 	c.Set("username", username)
+	c.Set("user", user)
 	return true, nil
-}
-
-func handleGetInfo(c echo.Context) error {
-	return c.JSON(200, info{
-		Version:  version,
-		Capacity: conf.CapBytes,
-		Used:     atomic.LoadInt64(&used),
-	})
-}
-
-func handleGetFile(c echo.Context) error {
-	req := c.Request()
-	requestPath := path.Join(conf.Root, req.URL.Path)
-	info, err := os.Stat(requestPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return errNotExists
-		}
-		c.Logger().Error("get fileinfo:", err)
-		return err
-	}
-	if !info.IsDir() {
-		if c.QueryParam("seek") != "" {
-			return c.File(requestPath)
-		}
-		return c.Attachment(requestPath, path.Base(requestPath))
-	}
-
-	childrenInfo, err := ioutil.ReadDir(requestPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return c.NoContent(404)
-		}
-		// log.Printf("read dir %q: %s\n", path, err)
-		return err
-	}
-
-	result := make([]fileInfo, len(childrenInfo))
-	for i, info := range childrenInfo {
-		result[i] = fileInfo{
-			Name:  info.Name(),
-			IsDir: info.IsDir(),
-			Size:  info.Size(),
-		}
-	}
-	return c.JSON(200, result)
-}
-
-func handlePostFile(c echo.Context) error {
-	req := c.Request()
-	requestPath := path.Join(conf.Root, req.URL.Path)
-
-	if path.Base(requestPath) == conf.Root {
-		return errCreateRoot
-	}
-
-	if dirInfo, err := os.Stat(path.Dir(requestPath)); err != nil {
-		if os.IsNotExist(err) {
-			return errNotExists
-		}
-		c.Logger().Error("get fileinfo:", err)
-		return err
-	} else if !dirInfo.IsDir() {
-		return errIsNotDir
-	}
-
-	if c.QueryParam("type") == "dir" {
-		if err := os.Mkdir(requestPath, 0755); err != nil {
-			c.Logger().Error("create directory:", err)
-			return err
-		}
-		return c.JSON(200, msg{"directory created successfully"})
-	}
-
-	var freeSize int64
-	if conf.CapBytes > 0 {
-		freeSize = conf.CapBytes - atomic.LoadInt64(&used)
-		if freeSize <= 0 {
-			return errInsufficient
-		}
-	}
-
-	f, err := os.OpenFile(requestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		c.Logger().Error("create file:", err)
-		return err
-	}
-
-	defer func() {
-		f.Close()
-		req.Body.Close()
-	}()
-
-	if conf.CapBytes > 0 {
-		var bufSize int64 = 1024 * 1024 * 4
-		var copied int64
-		for {
-			written, err := io.CopyN(f, req.Body, bufSize)
-			if copied += written; copied > freeSize {
-				io.Copy(ioutil.Discard, req.Body)
-				f.Close()
-				os.Remove(requestPath)
-				return errInsufficient
-			}
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				c.Logger().Error("copy file:", err)
-				return err
-			}
-		}
-		atomic.AddInt64(&used, copied)
-	} else {
-		if _, err := io.Copy(f, req.Body); err != nil {
-			c.Logger().Error("copy file:", err)
-			return err
-		}
-	}
-
-	return c.JSON(200, msg{"file uploaded successfully"})
 }
