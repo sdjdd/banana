@@ -1,7 +1,7 @@
 package main
 
 import (
-	"crypto/subtle"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -10,61 +10,30 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 )
 
-type fileInfo struct {
-	Name  string `json:"name"`
-	IsDir bool   `json:"isDir"`
-	Size  int64  `json:"size"`
-}
-
-type info struct {
-	Version  string   `json:"version"`
-	Capacity int64    `json:"capacity"`
-	Used     int64    `json:"used"`
-	User     userInfo `json:"user"`
-}
-
-type userInfo struct {
-	Name   string `json:"name"`
-	Upload bool   `json:"upload"`
-	Delete bool   `json:"delete"`
-}
-
 type msg struct {
-	Message string `json:"message"`
-}
-
-type httpErr struct {
-	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 
 const version = "v0.0.1-beta"
 
-var (
-	errInternal     = echo.NewHTTPError(500, httpErr{100, "internal server error"})
-	errForbidden    = echo.NewHTTPError(403, httpErr{201, "forbidden"})
-	errCreateRoot   = echo.NewHTTPError(400, httpErr{202, "cannot create /"})
-	errDeleteRoot   = echo.NewHTTPError(400, httpErr{203, "cannot delete /"})
-	errNotExists    = echo.NewHTTPError(404, httpErr{204, "no such file of directiry"})
-	errIsNotDir     = echo.NewHTTPError(400, httpErr{205, "is not directory"})
-	errInsufficient = echo.NewHTTPError(400, httpErr{206, "space is insufficient"})
-)
+var binDir string
 
 var used int64
 
+func init() {
+	binPath, err := os.Executable()
+	if err != nil {
+		panic(err)
+	}
+	binDir = filepath.Dir(binPath)
+	fmt.Println(binDir)
+}
+
 func main() {
-	e := echo.New()
-	e.HideBanner = true
-	e.Logger.SetHeader("${time_rfc3339} ${level}")
-
-	loadRouters(e)
-
-	e.Use(middleware.BasicAuthWithConfig(
-		middleware.BasicAuthConfig{
-			Skipper:   skipBasicAuth,
-			Validator: authenticate,
-		},
-	))
+	if err := conf.read("banana.yml"); err != nil {
+		fmt.Println("error: read config file:", err)
+		os.Exit(1)
+	}
 
 	var err error
 	used, err = getDirSize(conf.Root)
@@ -76,6 +45,7 @@ func main() {
 	// 	c.Logger().Error(err)
 	// 	e.DefaultHTTPErrorHandler(err, c)
 	// }
+	e := newEcho()
 	e.Start(conf.Listen)
 }
 
@@ -89,19 +59,21 @@ func getDirSize(path string) (size int64, err error) {
 	return
 }
 
-func skipBasicAuth(c echo.Context) bool {
-	return conf.Anonymous.Enable
-}
+func newEcho() (e *echo.Echo) {
+	e = echo.New()
+	e.HideBanner = true
+	e.Logger.SetHeader("${time_rfc3339} ${level}")
 
-func authenticate(username, password string, c echo.Context) (bool, error) {
-	user, ok := conf.Users[username]
-	if !ok {
-		return false, nil
+	search := []string{"static", filepath.Join(binDir, "static")}
+	for _, path := range search {
+		if _, err := os.Stat(path); err == nil {
+			e.Use(middleware.Static(path))
+			break
+		}
 	}
-	if subtle.ConstantTimeCompare([]byte(user.Password), []byte(password)) != 1 {
-		return false, nil
-	}
-	c.Set("username", username)
-	c.Set("user", user)
-	return true, nil
+	e.Use(middleware.BasicAuth(users.auth))
+
+	loadRouters(e)
+
+	return
 }

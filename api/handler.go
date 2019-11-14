@@ -4,38 +4,37 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 	"sync/atomic"
+	"time"
 
 	"github.com/labstack/echo/v4"
 )
 
-func handleGetInfo(c echo.Context) error {
-	var userInfo userInfo
-	user := c.Get("user")
-	if user == nil {
-		userInfo.Upload = conf.Anonymous.Upload
-		userInfo.Delete = conf.Anonymous.Delete
-	} else {
-		u := user.(userConf)
-		userInfo.Name = c.Get("username").(string)
-		userInfo.Upload = u.Upload
-		userInfo.Delete = u.Delete
-	}
+type fileInfo struct {
+	Name    string    `json:"name"`
+	IsDir   bool      `json:"isDir"`
+	Size    int64     `json:"size"`
+	ModTime time.Time `json:"modTime"`
+}
 
-	return c.JSON(200, info{
-		Version:  version,
-		Capacity: conf.CapBytes,
-		Used:     atomic.LoadInt64(&used),
-		User:     userInfo,
+const bufSize int64 = 1024 * 1024 * 4
+
+func handleGetInfo(c echo.Context) error {
+	return c.JSON(200, struct {
+		Version string `json:"version"`
+		Size    int64  `json:"size"`
+		Used    int64  `json:"used"`
+	}{
+		Version: version,
+		Size:    conf.Size,
+		Used:    atomic.LoadInt64(&used),
 	})
 }
 
 func handleGetFile(c echo.Context) error {
-	req := c.Request()
-	requestPath := path.Join(conf.Root, req.URL.Path)
-	info, err := os.Stat(requestPath)
+	path := c.Get("path").(string)
+	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return errNotExists
@@ -44,16 +43,20 @@ func handleGetFile(c echo.Context) error {
 		return errInternal
 	}
 	if !info.IsDir() {
-		if c.QueryParam("seek") != "" {
-			return c.File(requestPath)
+		user := c.Get("user").(user)
+		if !user.can("download") {
+			return errForbidden
 		}
-		return c.Attachment(requestPath, path.Base(requestPath))
+		if c.QueryParam("seek") != "" {
+			return c.File(path)
+		}
+		return c.Attachment(path, filepath.Base(path))
 	}
 
-	childrenInfo, err := ioutil.ReadDir(requestPath)
+	childrenInfo, err := ioutil.ReadDir(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return c.NoContent(404)
+			return errNotExists
 		}
 		c.Logger().Errorf("get file info: %s", err)
 		return errInternal
@@ -62,34 +65,41 @@ func handleGetFile(c echo.Context) error {
 	result := make([]fileInfo, len(childrenInfo))
 	for i, info := range childrenInfo {
 		result[i] = fileInfo{
-			Name:  info.Name(),
-			IsDir: info.IsDir(),
-			Size:  info.Size(),
+			Name:    info.Name(),
+			IsDir:   info.IsDir(),
+			Size:    info.Size(),
+			ModTime: info.ModTime(),
 		}
 	}
 	return c.JSON(200, result)
 }
 
 func handlePostFile(c echo.Context) error {
-	req := c.Request()
-	requestPath := path.Join(conf.Root, req.URL.Path)
-
-	if path.Base(requestPath) == conf.Root {
-		return errCreateRoot
+	user := c.Get("user").(user)
+	if !user.can("upload") {
+		return errForbidden
 	}
 
-	if dirInfo, err := os.Stat(path.Dir(requestPath)); err != nil {
+	path := c.Get("path").(string)
+	if path == conf.Root {
+		return errNoFilename
+	}
+
+	if dirInfo, err := os.Stat(filepath.Dir(path)); err != nil {
 		if os.IsNotExist(err) {
-			return errNotExists
+			return errBaseNotExists
 		}
-		c.Logger().Error("get file info:", err)
+		c.Logger().Error("get base info:", err)
 		return err
 	} else if !dirInfo.IsDir() {
 		return errIsNotDir
 	}
 
 	if c.QueryParam("type") == "dir" {
-		if err := os.Mkdir(requestPath, 0755); err != nil {
+		if err := os.Mkdir(path, 0755); err != nil {
+			if os.IsExist(err) {
+				return errExists
+			}
 			c.Logger().Error("create directory:", err)
 			return errInternal
 		}
@@ -97,33 +107,33 @@ func handlePostFile(c echo.Context) error {
 	}
 
 	var freeSize int64
-	if conf.CapBytes > 0 {
-		freeSize = conf.CapBytes - atomic.LoadInt64(&used)
+	if conf.Size > 0 {
+		freeSize = conf.Size - atomic.LoadInt64(&used)
 		if freeSize <= 0 {
 			return errInsufficient
 		}
 	}
 
-	f, err := os.OpenFile(requestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		c.Logger().Error("create file:", err)
 		return errInternal
 	}
 
+	body := c.Request().Body
 	defer func() {
 		f.Close()
-		req.Body.Close()
+		body.Close()
 	}()
 
-	if conf.CapBytes > 0 {
-		var bufSize int64 = 1024 * 1024 * 4
-		var copied int64
+	var copied int64
+	if conf.Size > 0 {
 		for {
-			written, err := io.CopyN(f, req.Body, bufSize)
+			written, err := io.CopyN(f, body, bufSize)
 			if copied += written; copied > freeSize {
-				io.Copy(ioutil.Discard, req.Body)
+				io.Copy(ioutil.Discard, body)
 				f.Close()
-				os.Remove(requestPath)
+				os.Remove(path)
 				return errInsufficient
 			}
 			if err != nil {
@@ -134,32 +144,26 @@ func handlePostFile(c echo.Context) error {
 				return errInternal
 			}
 		}
-		atomic.AddInt64(&used, copied)
 	} else {
-		if _, err := io.Copy(f, req.Body); err != nil {
+		if copied, err = io.Copy(f, body); err != nil {
 			c.Logger().Error("copy file:", err)
 			return errInternal
 		}
 	}
+	atomic.AddInt64(&used, copied)
 
 	return c.JSON(200, msg{"file uploaded successfully"})
 }
 
 func handleDelFile(c echo.Context) error {
-	user := c.Get("user")
-	if user == nil {
-		if !conf.Anonymous.Delete {
-			return errForbidden
-		}
-	} else if !user.(userConf).Delete {
+	user := c.Get("user").(user)
+	if !user.can("delete") {
 		return errForbidden
 	}
 
-	req := c.Request()
-	path := filepath.Join(conf.Root, req.URL.Path)
-
-	if filepath.Base(path) == conf.Root {
-		return errDeleteRoot
+	path := c.Get("path").(string)
+	if path == conf.Root {
+		return errNoFilename
 	}
 
 	info, err := os.Stat(path)
@@ -182,4 +186,29 @@ func handleDelFile(c echo.Context) error {
 	}
 
 	return c.JSON(200, msg{"file deleted successfully"})
+}
+
+func handleMoveFile(c echo.Context) error {
+	var act struct{ From, To string }
+	if err := c.Bind(&act); err != nil {
+		c.Logger().Errorf("bind act value: %s", err)
+		return errInternal
+	}
+
+	act.From = filepath.Join(conf.Root, act.From)
+	act.To = filepath.Join(conf.Root, act.To)
+
+	if err := os.Rename(act.From, act.To); err != nil {
+		switch {
+		case os.IsExist(err):
+			return errExists
+		case os.IsNotExist(err):
+			return errNotExists
+		default:
+			c.Logger().Errorf("rename file: %s", err)
+			return errInternal
+		}
+	}
+
+	return c.JSON(200, msg{"file or directory moved successfully"})
 }
