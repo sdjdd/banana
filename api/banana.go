@@ -26,7 +26,6 @@ func init() {
 		panic(err)
 	}
 	binDir = filepath.Dir(binPath)
-	fmt.Println(binDir)
 }
 
 func main() {
@@ -64,10 +63,10 @@ func newEcho() (e *echo.Echo) {
 	e.HideBanner = true
 	e.Logger.SetHeader("${time_rfc3339} ${level}")
 
-	search := []string{"static", filepath.Join(binDir, "static")}
+	search := []string{"ui", filepath.Join(binDir, "ui")}
 	for _, path := range search {
 		if _, err := os.Stat(path); err == nil {
-			e.Use(middleware.Static(path))
+			e.Static("/ui", path)
 			break
 		}
 	}

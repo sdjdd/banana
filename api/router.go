@@ -8,6 +8,10 @@ import (
 )
 
 func loadRouters(e *echo.Echo) {
+	e.GET("/", func(c echo.Context) error {
+		return c.Redirect(301, "/ui/")
+	})
+
 	e.GET("/info", handleGetInfo)
 
 	fs := e.Group("/fs", middlewareParsePath)
