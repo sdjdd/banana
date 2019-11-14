@@ -57,9 +57,14 @@ func (u userList) auth(username, password string, c echo.Context) (bool, error) 
 	return true, nil
 }
 
-func (u user) can(action string) bool {
-	_, ok := u.Privilege[action]
-	return ok
+func (u user) can(action ...string) bool {
+	for _, a := range action {
+		_, ok := u.Privilege[a]
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *config) read(name string) (err error) {

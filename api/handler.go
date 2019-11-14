@@ -189,6 +189,11 @@ func handleDelFile(c echo.Context) error {
 }
 
 func handleMoveFile(c echo.Context) error {
+	user := c.Get("user").(user)
+	if !user.can("upload", "delete") {
+		return errForbidden
+	}
+
 	var act struct{ From, To string }
 	if err := c.Bind(&act); err != nil {
 		c.Logger().Errorf("bind act value: %s", err)
