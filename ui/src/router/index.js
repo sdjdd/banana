@@ -8,7 +8,12 @@ Vue.use(VueRouter)
 
 const routes = [
   {
-    path: '/',
+    path: '/login',
+    name: 'login',
+    component: Login
+  },
+  {
+    path: '*',
     name: 'home',
     component: Home,
     beforeEnter: (to, from, next) => {
@@ -18,11 +23,6 @@ const routes = [
         next('/login')
       )
     }
-  },
-  {
-    path: '/login',
-    name: 'login',
-    component: Login
   }
 ]
 

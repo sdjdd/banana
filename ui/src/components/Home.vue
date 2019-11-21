@@ -4,25 +4,26 @@
       backgroundColor: '#fff',
       borderRight: '1px #dcdee2 solid'
     }">
-      <div class="logo">Banana</div>
-      <Menu active-name="1-1" width="auto">
-        <MenuItem name="1-1">
-          <Icon type="ios-navigate"></Icon>
-          <span>全部</span>
-        </MenuItem>
-      </Menu>
+      <MySider />
     </Sider>
     <Layout>
-      <Header class="header" :style="{backgroundColor: '#fff'}">
-        Header
+      <Header :style="{backgroundColor: '#fff', padding: 0}">
+        <MyHeader />
       </Header>
       <Content :style="{padding: '0 16px 16px'}">
         <Breadcrumb :style="{margin: '16px 0'}" separator=">">
           <BreadcrumbItem>全部</BreadcrumbItem>
           <BreadcrumbItem>folder</BreadcrumbItem>
         </Breadcrumb>
-        <Card>
-          <div style="height: auto">Content</div>
+        <Card dis-hover>
+          <div style="height: auto">
+            <Table :columns="fileColumns" :data="files">
+              <template slot-scope="{ row }" slot="name">
+                <a v-if="row.isDir" href="javascript:;" @click="move(row.name)">{{ row.name }}</a>
+                <span v-else>{{ row.name }}</span>
+              </template>
+            </Table>
+          </div>
         </Card>
       </Content>
     </Layout>
@@ -30,41 +31,78 @@
 </template>
 
 <script>
-// import Sidebar from '@/components/Sidebar.vue'
+import client from '../ajax-client'
+import * as errors from '../errors'
+import MyHeader from '@/components/Header.vue'
+import MySider from '@/components/Sider.vue'
 
 export default {
   components: {
-    //Sidebar
+    MyHeader,
+    MySider
   },
   data() {
     return {
-
+      fileColumns: [
+        {
+          title: '名称',
+          slot: 'name'
+        },
+        {
+          title: '上次修改时间',
+          key: 'modTime'
+        },
+        {
+          title: '大小',
+          key: 'size'
+        }
+      ]
     }
   },
   computed: {
     files() {
-      return this.$store.state.files
+      return this.$store.state.files.map(f => {
+        if (f.isDir) {
+          f.size = '-'
+        }
+        return f
+      })
+    },
+    currentPath() {
+      return this.$router.currentRoute.path
     }
   },
   methods: {
-    refreshFiles() {
-      this.$store.dispatch("updateFiles")
+    refreshInfo() {
+      client.info()
+    },
+    move(to) {
+      this.$router.push('/'+to)
     }
   },
-  created() {
-    this.refreshFiles()
+  async created() {
+    try {
+      await client.login('sdjdd', 'secret')
+      this.refreshInfo()
+      client.files(this.currentPath)
+    } catch (err) {
+      if (err === errors.NOT_ALLOW) {
+        this.$router.push('/login')
+      }
+    }
+  },
+  beforeRouteUpdate: (to, from, next) => {
+    client.files(to.fullPath)
+    next()
   }
 }
 </script>
 
-<style .scoped>
+<style>
 .logo {
   margin: 11px 0;
   font-size: 1.75rem;
   text-align: center;
-}
-.header {
-  border-bottom: 1px #ddd solid;
 }
 </style>
 

@@ -1,14 +1,17 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
-import axios from 'axios'
 
 Vue.use(Vuex)
 
 export default new Vuex.Store({
   state: {
+    info: {
+      size: 0,
+      used: 0
+    },
     user: {
       logged: true,
-      username: '',
+      username: 'sdjdd',
       password: ''
     },
     files: []
@@ -21,17 +24,13 @@ export default new Vuex.Store({
     },
     setFiles(state, files) {
       state.files = files
+    },
+    setInfo(state, info) {
+      state.info.size = info.size
+      state.info.used = info.used
     }
   },
   actions: {
-    async updateFiles({ state, commit }) {
-      let auth = {
-        username: state.user.username,
-        password: state.user.password
-      }
-      let resp = await axios.get('/fs/', { auth })
-      commit('setFiles', resp.data)
-    }
   },
   modules: {
   }
