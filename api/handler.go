@@ -43,7 +43,7 @@ func handleGetFile(c echo.Context) error {
 		return errInternal
 	}
 	if !info.IsDir() {
-		user := c.Get("user").(user)
+		user := c.Get("user").(*user)
 		if !user.can("download") {
 			return errForbidden
 		}
@@ -75,7 +75,7 @@ func handleGetFile(c echo.Context) error {
 }
 
 func handlePostFile(c echo.Context) error {
-	user := c.Get("user").(user)
+	user := c.Get("user").(*user)
 	if !user.can("upload") {
 		return errForbidden
 	}
@@ -156,7 +156,7 @@ func handlePostFile(c echo.Context) error {
 }
 
 func handleDelFile(c echo.Context) error {
-	user := c.Get("user").(user)
+	user := c.Get("user").(*user)
 	if !user.can("delete") {
 		return errForbidden
 	}
@@ -189,7 +189,7 @@ func handleDelFile(c echo.Context) error {
 }
 
 func handleMoveFile(c echo.Context) error {
-	user := c.Get("user").(user)
+	user := c.Get("user").(*user)
 	if !user.can("upload", "delete") {
 		return errForbidden
 	}

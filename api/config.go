@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/labstack/echo/v4"
 	"gopkg.in/yaml.v2"
 )
 
@@ -26,7 +25,7 @@ type user struct {
 	Privilege map[string]struct{}
 }
 
-type userList map[string]user
+type userList map[string]*user
 
 var conf config
 
@@ -36,25 +35,25 @@ func compare(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
-func (u userList) auth(username, password string, c echo.Context) (bool, error) {
-	var user user
+func (u userList) verify(username, password string) (*user, bool) {
+	var user *user
 	var ok bool
+
 	if username == "" || username == "anonymous" {
 		if user, ok = u["anonymous"]; !ok {
-			return false, nil
+			return nil, false
 		}
 	} else {
 		if user, ok = u[username]; !ok || !compare(user.Password, password) {
-			return false, nil
+			return nil, false
 		}
 	}
 
 	if !user.Expire.IsZero() && time.Now().After(user.Expire) {
-		return false, nil
+		return nil, false
 	}
 
-	c.Set("user", user)
-	return true, nil
+	return user, true
 }
 
 func (u user) can(action ...string) bool {
@@ -127,7 +126,7 @@ func (c *config) read(name string) (err error) {
 			}
 		}
 
-		users[name] = user{
+		users[name] = &user{
 			Expire:    ex,
 			Password:  info.Password,
 			Privilege: privilege,

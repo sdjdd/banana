@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 )
 
 type msg struct {
@@ -70,7 +69,6 @@ func newEcho() (e *echo.Echo) {
 			break
 		}
 	}
-	e.Use(middleware.BasicAuth(users.auth))
 
 	loadRouters(e)
 
