@@ -1,50 +1,42 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/gommon/log"
 )
-
-type msg struct {
-	Message string `json:"message"`
-}
 
 const version = "v0.0.1-beta"
 
-var binDir string
-
-var used int64
-
-func init() {
-	binPath, err := os.Executable()
-	if err != nil {
-		panic(err)
-	}
-	binDir = filepath.Dir(binPath)
-}
+var (
+	used  int64
+	conf  config
+	users = make(userList)
+)
 
 func main() {
-	if err := conf.read("banana.yml"); err != nil {
-		fmt.Println("error: read config file:", err)
-		os.Exit(1)
-	}
+	var confName, staticDir string
+	flag.StringVar(&confName, "c", "banana.yml", "config file")
+	flag.StringVar(&staticDir, "s", "", "static directory")
+	flag.Parse()
 
 	var err error
-	used, err = getDirSize(conf.Root)
-	if err != nil {
-		log.Fatalln("get root dir size:", err)
+	if err = conf.read(confName); err != nil {
+		launchErr("read config file:", err)
 	}
 
-	// e.HTTPErrorHandler = func(err error, c echo.Context) {
-	// 	c.Logger().Error(err)
-	// 	e.DefaultHTTPErrorHandler(err, c)
-	// }
-	e := newEcho()
-	e.Start(conf.Listen)
+	used, err = getDirSize(conf.Root)
+	if err != nil {
+		launchErr("get root size:", err)
+	}
+
+	e := newEcho(staticDir)
+	e.Logger.Info("banana started on ", conf.Listen)
+	launchErr(e.Start(conf.Listen))
 }
 
 func getDirSize(path string) (size int64, err error) {
@@ -57,20 +49,19 @@ func getDirSize(path string) (size int64, err error) {
 	return
 }
 
-func newEcho() (e *echo.Echo) {
+func newEcho(staticDir string) (e *echo.Echo) {
 	e = echo.New()
 	e.HideBanner = true
+	e.HidePort = true
 	e.Logger.SetHeader("${time_rfc3339} ${level}")
-
-	search := []string{"ui", filepath.Join(binDir, "ui")}
-	for _, path := range search {
-		if _, err := os.Stat(path); err == nil {
-			e.Static("/ui", path)
-			break
-		}
-	}
+	e.Logger.SetLevel(log.DEBUG)
 
 	loadRouters(e)
 
 	return
+}
+
+func launchErr(a ...interface{}) {
+	fmt.Println(a...)
+	os.Exit(1)
 }

@@ -1,14 +1,12 @@
 package main
 
 import (
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"gopkg.in/yaml.v2"
 )
@@ -19,62 +17,22 @@ type config struct {
 	Size   int64
 }
 
-type user struct {
-	Expire    time.Time
+type confUsers map[string]struct {
+	Expire    string
 	Password  string
-	Privilege map[string]struct{}
+	Privilege []string
 }
 
-type userList map[string]*user
-
-var conf config
-
-var users = make(userList)
-
-func compare(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
-}
-
-func (u userList) verify(username, password string) (*user, bool) {
-	var user *user
-	var ok bool
-
-	if username == "" || username == "anonymous" {
-		if user, ok = u["anonymous"]; !ok {
-			return nil, false
-		}
-	} else {
-		if user, ok = u[username]; !ok || !compare(user.Password, password) {
-			return nil, false
-		}
-	}
-
-	if !user.Expire.IsZero() && time.Now().After(user.Expire) {
-		return nil, false
-	}
-
-	return user, true
-}
-
-func (u user) can(action ...string) bool {
-	for _, a := range action {
-		_, ok := u.Privilege[a]
-		if !ok {
-			return false
-		}
-	}
-	return true
+func (c *config) reset() {
+	c.Listen = ""
+	c.Root = ""
+	c.Size = 0
 }
 
 func (c *config) read(name string) (err error) {
-	search := []string{name, filepath.Join(binDir, name)}
-	var f *os.File
-	for _, path := range search {
-		f, err = os.Open(path)
-		if err == nil {
-			break
-		}
-	}
+	c.reset()
+
+	f, err := os.Open(name)
 	if err != nil {
 		return
 	}
@@ -84,26 +42,18 @@ func (c *config) read(name string) (err error) {
 		Listen string
 		Root   string
 		Size   string
-		Users  map[string]struct {
-			Expire    string
-			Password  string
-			Privilege []string
-		}
+		Users  confUsers
 	}
 
-	err = yaml.NewDecoder(f).Decode(&rawConf)
-	if err != nil {
-		return err
+	if err = yaml.NewDecoder(f).Decode(&rawConf); err != nil {
+		return
 	} else if rawConf.Root == "" {
 		return errors.New("root must be provided")
 	}
 
-	if rawConf.Listen == "" {
+	if c.Listen = rawConf.Listen; c.Listen == "" {
 		c.Listen = "0.0.0.0:8080"
-	} else {
-		c.Listen = rawConf.Listen
 	}
-
 	if c.Root, err = filepath.Abs(rawConf.Root); err != nil {
 		return
 	}
@@ -111,29 +61,7 @@ func (c *config) read(name string) (err error) {
 		return fmt.Errorf("parse size %q: %s", rawConf.Size, err)
 	}
 
-	for name, info := range rawConf.Users {
-		privilege := make(map[string]struct{})
-		for _, pri := range info.Privilege {
-			privilege[pri] = struct{}{}
-		}
-
-		var ex time.Time
-		if info.Expire != "" {
-			ex, err = time.ParseInLocation("2006-01-02 15:04:05",
-				info.Expire, time.Local)
-			if err != nil {
-				return
-			}
-		}
-
-		users[name] = &user{
-			Expire:    ex,
-			Password:  info.Password,
-			Privilege: privilege,
-		}
-	}
-
-	return nil
+	return users.Set(rawConf.Users)
 }
 
 func parseSize(str string) (size int64, err error) {

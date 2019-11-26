@@ -11,6 +11,10 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+type msg struct {
+	Message string `json:"message"`
+}
+
 type fileInfo struct {
 	Name    string    `json:"name"`
 	IsDir   bool      `json:"isDir"`
@@ -42,13 +46,11 @@ func handleGetFile(c echo.Context) error {
 		c.Logger().Error("get file info:", err)
 		return errInternal
 	}
+
 	if !info.IsDir() {
 		user := c.Get("user").(*user)
-		if !user.can("download") {
+		if !user.Privilege.Download {
 			return errForbidden
-		}
-		if c.QueryParam("seek") != "" {
-			return c.File(path)
 		}
 		return c.Attachment(path, filepath.Base(path))
 	}
@@ -76,7 +78,7 @@ func handleGetFile(c echo.Context) error {
 
 func handlePostFile(c echo.Context) error {
 	user := c.Get("user").(*user)
-	if !user.can("upload") {
+	if !user.Privilege.Upload {
 		return errForbidden
 	}
 
@@ -121,17 +123,13 @@ func handlePostFile(c echo.Context) error {
 	}
 
 	body := c.Request().Body
-	defer func() {
-		f.Close()
-		body.Close()
-	}()
+	defer f.Close()
 
 	var copied int64
 	if conf.Size > 0 {
 		for {
 			written, err := io.CopyN(f, body, bufSize)
 			if copied += written; copied > freeSize {
-				io.Copy(ioutil.Discard, body)
 				f.Close()
 				os.Remove(path)
 				return errInsufficient
@@ -157,7 +155,7 @@ func handlePostFile(c echo.Context) error {
 
 func handleDelFile(c echo.Context) error {
 	user := c.Get("user").(*user)
-	if !user.can("delete") {
+	if !user.Privilege.Delete {
 		return errForbidden
 	}
 
@@ -190,7 +188,7 @@ func handleDelFile(c echo.Context) error {
 
 func handleMoveFile(c echo.Context) error {
 	user := c.Get("user").(*user)
-	if !user.can("upload", "delete") {
+	if !user.Privilege.Upload || !user.Privilege.Delete {
 		return errForbidden
 	}
 

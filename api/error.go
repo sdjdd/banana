@@ -14,9 +14,9 @@ var (
 	errInternal  = echo.NewHTTPError(500, "internal server error")
 
 	// fs error
-	errNoFilename    = echo.NewHTTPError(400, httpErr{101, "filename must be provided"})
-	errBaseNotExists = echo.NewHTTPError(400, httpErr{102, "base directory not exists"})
-	errIsNotDir      = echo.NewHTTPError(400, httpErr{103, "is not directory"})
-	errExists        = echo.NewHTTPError(400, httpErr{104, "already exists"})
-	errInsufficient  = echo.NewHTTPError(400, httpErr{105, "space is insufficient"})
+	errNoFilename    = echo.NewHTTPError(400, httpErr{1, "filename must be provided"})
+	errBaseNotExists = echo.NewHTTPError(400, httpErr{2, "base directory not exists"})
+	errIsNotDir      = echo.NewHTTPError(400, httpErr{3, "is not directory"})
+	errExists        = echo.NewHTTPError(400, httpErr{4, "already exists"})
+	errInsufficient  = echo.NewHTTPError(400, httpErr{5, "space is insufficient"})
 )
