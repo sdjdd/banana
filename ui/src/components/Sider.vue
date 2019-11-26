@@ -17,6 +17,7 @@
 
 <script>
 import { mapState } from 'vuex'
+import { humanSize } from '../utils'
 
 export default {
   computed: {
@@ -28,8 +29,8 @@ export default {
     },
     usedText() {
       let { used, size } = this.info
-      let usedText = this.humanSize(used)
-      let sizeText = size <= 0 ? '无限制' : this.humanSize(size)
+      let usedText = humanSize(used)
+      let sizeText = size <= 0 ? '无限制' : humanSize(size)
       return usedText + ' / ' + sizeText
     },
     ...mapState([
@@ -37,17 +38,6 @@ export default {
     ])
   },
   methods: {
-    humanSize(size) {
-      const suffix = ['B', 'KB', 'MB', 'GB', 'TB']
-      let i
-      for (i = 0; size > 1024; ++i) {
-        size /= 1024
-      }
-      if (i >= suffix.length) {
-        i = suffix.length - 1
-      }
-      return size.toFixed(2) + ' ' + suffix[i]
-    }
   }
 }
 </script>

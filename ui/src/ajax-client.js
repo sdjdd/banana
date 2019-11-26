@@ -26,7 +26,7 @@ const client = {
     async info() {
         try {
             let resp = await this.axins.get('/api/info')
-            store.commit('setInfo', resp.data)
+            store.commit('info', resp.data)
         } catch (err) {
             if (err.response.status === 403) {
                 throw errors.NOT_ALLOW
@@ -38,13 +38,21 @@ const client = {
     async files(path = '/') {
         try {
             let resp = await this.axins.get('/fs' + path)
-            store.commit('setFiles', resp.data)
+            store.commit('files', resp.data)
         } catch (err) {
             if (err.response.status === 403) {
                 throw errors.NOT_ALLOW
             }
             throw errors.INTERNAL
         }
+    },
+
+    upload(file) {
+        let path = `fs/${store.state.path}/${file.name}`
+            .split('/')
+            .filter(v => v !== '')
+            .join('/')
+        this.axins.post('/' + path, file)
     }
 }
 

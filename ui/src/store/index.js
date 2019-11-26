@@ -14,7 +14,8 @@ export default new Vuex.Store({
       username: 'sdjdd',
       password: ''
     },
-    files: []
+    files: [],
+    path: '/'
   },
   mutations: {
     user(state, userInfo) {
@@ -22,12 +23,15 @@ export default new Vuex.Store({
       state.user.username = userInfo.username
       state.user.password = userInfo.password
     },
-    setFiles(state, files) {
+    files(state, files) {
       state.files = files
     },
-    setInfo(state, info) {
+    info(state, info) {
       state.info.size = info.size
       state.info.used = info.used
+    },
+    path(state, path) {
+      state.path = path
     }
   },
   actions: {

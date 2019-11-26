@@ -12,8 +12,10 @@
       </Header>
       <Content :style="{padding: '0 16px 16px'}">
         <Breadcrumb :style="{margin: '16px 0'}" separator=">">
-          <BreadcrumbItem>全部</BreadcrumbItem>
-          <BreadcrumbItem>folder</BreadcrumbItem>
+          <BreadcrumbItem v-for="(dir, index) in dirStack" :key="dir.path">
+            <a v-if="index < dirStack.length-1" href="javascript:;" @click="moveAbs(dir.path)">{{ dir.name }}</a>
+            <span v-else>{{ dir.name }}</span>
+          </BreadcrumbItem>
         </Breadcrumb>
         <Card dis-hover>
           <div style="height: auto">
@@ -35,6 +37,8 @@ import client from '../ajax-client'
 import * as errors from '../errors'
 import MyHeader from '@/components/Header.vue'
 import MySider from '@/components/Sider.vue'
+import { humanSize, humanDate } from '../utils'
+import { mapState } from 'vuex'
 
 export default {
   components: {
@@ -50,13 +54,13 @@ export default {
         },
         {
           title: '上次修改时间',
-          key: 'modTime'
+          key: 'modTimeStr'
         },
         {
           title: '大小',
           key: 'size'
         }
-      ]
+      ],
     }
   },
   computed: {
@@ -64,36 +68,64 @@ export default {
       return this.$store.state.files.map(f => {
         if (f.isDir) {
           f.size = '-'
+        } else {
+          f.size = humanSize(f.size)
         }
+        f.modTime = new Date(f.modTime)
+        f.modTimeStr = humanDate(f.modTime)
         return f
+      }).sort((a, b) => {
+        if (a.isDir && b.isDir || !a.isDir && !b.isDir) {
+          return b.modTime - a.modTime
+        } else if (a.isDir) {
+          return -1
+        } else if (b.isDir) {
+          return 1
+        }
       })
     },
-    currentPath() {
-      return this.$router.currentRoute.path
-    }
+    dirStack() {
+      let stack = [ { name: '全部', path: '' } ]
+      if (this.path !== '/') {
+        this.path.split('/').slice(1).forEach(v => stack.push({ name: v }))
+      }
+      for (let i = 1; i < stack.length; ++i) {
+        stack[i].path = stack[i-1].path + '/' + stack[i].name
+      }
+      stack[0].path = '/'
+      return stack
+    },
+    ...mapState([
+      'path'
+    ])
   },
   methods: {
     refreshInfo() {
       client.info()
     },
     move(to) {
-      this.$router.push('/'+to)
+      this.$router.push((this.path === '/' ? '' : this.path + '/') + to)
+    },
+    moveAbs(to) {
+      this.$router.push(to)
     }
   },
   async created() {
     try {
       await client.login('sdjdd', 'secret')
       this.refreshInfo()
-      client.files(this.currentPath)
+
+      this.$store.commit('path', this.$router.currentRoute.path)
+      client.files(this.path)
     } catch (err) {
       if (err === errors.NOT_ALLOW) {
         this.$router.push('/login')
       }
     }
   },
-  beforeRouteUpdate: (to, from, next) => {
-    client.files(to.fullPath)
-    next()
+  beforeRouteUpdate(to, from, next) {
+    this.$store.commit('path', to.fullPath)
+    client.files(to.fullPath).then(next)
   }
 }
 </script>
