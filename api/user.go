@@ -5,25 +5,27 @@ import (
 	"time"
 )
 
-type userPrivilege struct {
-	Download bool
-	Upload   bool
-	Delete   bool
-}
+type (
+	userPrivilege struct {
+		Download bool
+		Upload   bool
+		Delete   bool
+	}
 
-type user struct {
-	Expire    time.Time
-	Password  string
-	Privilege userPrivilege
-}
+	user struct {
+		Expire    time.Time
+		Password  string
+		Privilege userPrivilege
+	}
 
-type userList map[string]*user
+	userList map[string]*user
+)
 
 func compare(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
-func (u userList) Set(users confUsers) (err error) {
+func (u userList) set(users confUsers) (err error) {
 	for key := range u {
 		delete(u, key)
 	}
@@ -53,13 +55,10 @@ func (u userList) Set(users confUsers) (err error) {
 	return
 }
 
-func (u userList) verify(username, password string) (*user, bool) {
-	var user *user
-	var ok bool
-
+func (u userList) verify(username, password string) (user *user, ok bool) {
 	if username == "" || username == "anonymous" {
 		if user, ok = u["anonymous"]; !ok {
-			return nil, false
+			return
 		}
 	} else {
 		if user, ok = u[username]; !ok || !compare(user.Password, password) {

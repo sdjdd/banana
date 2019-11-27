@@ -11,28 +11,39 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-type msg struct {
-	Message string `json:"message"`
-}
+type (
+	msg struct {
+		Content string `json:"message"`
+	}
 
-type fileInfo struct {
-	Name    string    `json:"name"`
-	IsDir   bool      `json:"isDir"`
-	Size    int64     `json:"size"`
-	ModTime time.Time `json:"modTime"`
-}
+	fileInfo struct {
+		Name    string    `json:"name"`
+		IsDir   bool      `json:"isDir"`
+		Size    int64     `json:"size"`
+		ModTime time.Time `json:"modTime"`
+	}
 
-const bufSize int64 = 1024 * 1024 * 4
-
-func handleGetInfo(c echo.Context) error {
-	return c.JSON(200, struct {
+	serverInfo struct {
 		Version string `json:"version"`
 		Size    int64  `json:"size"`
 		Used    int64  `json:"used"`
-	}{
+	}
+)
+
+func handleVerifyAuth(c echo.Context) error {
+	if usr, pwd, ok := c.Request().BasicAuth(); ok {
+		if _, ok = users.verify(usr, pwd); ok {
+			return c.NoContent(200)
+		}
+	}
+	return c.NoContent(403)
+}
+
+func handleGetInfo(c echo.Context) error {
+	return c.JSON(200, serverInfo{
 		Version: version,
-		Size:    conf.Size,
-		Used:    atomic.LoadInt64(&used),
+		Size:    diskSize,
+		Used:    atomic.LoadInt64(&diskUsed),
 	})
 }
 
@@ -43,15 +54,11 @@ func handleGetFile(c echo.Context) error {
 		if os.IsNotExist(err) {
 			return errNotExists
 		}
-		c.Logger().Error("get file info:", err)
+		c.Logger().Error("get file info: ", err)
 		return errInternal
 	}
 
 	if !info.IsDir() {
-		user := c.Get("user").(*user)
-		if !user.Privilege.Download {
-			return errForbidden
-		}
 		return c.Attachment(path, filepath.Base(path))
 	}
 
@@ -60,7 +67,7 @@ func handleGetFile(c echo.Context) error {
 		if os.IsNotExist(err) {
 			return errNotExists
 		}
-		c.Logger().Errorf("get file info: %s", err)
+		c.Logger().Error("get file info: ", err)
 		return errInternal
 	}
 
@@ -77,13 +84,8 @@ func handleGetFile(c echo.Context) error {
 }
 
 func handlePostFile(c echo.Context) error {
-	user := c.Get("user").(*user)
-	if !user.Privilege.Upload {
-		return errForbidden
-	}
-
 	path := c.Get("path").(string)
-	if path == conf.Root {
+	if path == diskRoot {
 		return errNoFilename
 	}
 
@@ -91,34 +93,36 @@ func handlePostFile(c echo.Context) error {
 		if os.IsNotExist(err) {
 			return errBaseNotExists
 		}
-		c.Logger().Error("get base info:", err)
+		c.Logger().Error("get base info: ", err)
 		return err
 	} else if !dirInfo.IsDir() {
 		return errIsNotDir
 	}
 
-	if c.QueryParam("type") == "dir" {
+	if c.QueryParam("dir") == "true" {
 		if err := os.Mkdir(path, 0755); err != nil {
 			if os.IsExist(err) {
 				return errExists
 			}
-			c.Logger().Error("create directory:", err)
+			c.Logger().Error("create directory: ", err)
 			return errInternal
 		}
 		return c.JSON(200, msg{"directory created successfully"})
 	}
 
 	var freeSize int64
-	if conf.Size > 0 {
-		freeSize = conf.Size - atomic.LoadInt64(&used)
-		if freeSize <= 0 {
+	if diskSize > 0 {
+		if freeSize = diskSize - atomic.LoadInt64(&diskUsed); freeSize <= 0 {
 			return errInsufficient
 		}
 	}
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
-		c.Logger().Error("create file:", err)
+		if os.IsExist(err) {
+			return errExists
+		}
+		c.Logger().Error("create file: ", err)
 		return errInternal
 	}
 
@@ -126,7 +130,8 @@ func handlePostFile(c echo.Context) error {
 	defer f.Close()
 
 	var copied int64
-	if conf.Size > 0 {
+	if diskSize > 0 {
+		const bufSize int64 = 1 << 21 // 2MB
 		for {
 			written, err := io.CopyN(f, body, bufSize)
 			if copied += written; copied > freeSize {
@@ -136,31 +141,26 @@ func handlePostFile(c echo.Context) error {
 			}
 			if err != nil {
 				if err == io.EOF {
+					atomic.AddInt64(&diskUsed, copied)
 					break
 				}
-				c.Logger().Error("copy file:", err)
+				c.Logger().Error("copy file: ", err)
 				return errInternal
 			}
 		}
 	} else {
 		if copied, err = io.Copy(f, body); err != nil {
-			c.Logger().Error("copy file:", err)
+			c.Logger().Error("copy file: ", err)
 			return errInternal
 		}
 	}
-	atomic.AddInt64(&used, copied)
 
 	return c.JSON(200, msg{"file uploaded successfully"})
 }
 
 func handleDelFile(c echo.Context) error {
-	user := c.Get("user").(*user)
-	if !user.Privilege.Delete {
-		return errForbidden
-	}
-
 	path := c.Get("path").(string)
-	if path == conf.Root {
+	if path == diskRoot {
 		return errNoFilename
 	}
 
@@ -169,46 +169,40 @@ func handleDelFile(c echo.Context) error {
 		if os.IsNotExist(err) {
 			return errNotExists
 		}
-		c.Logger().Errorf("get file info: %s", err)
+		c.Logger().Error("get file info: ", err)
 		return errInternal
 	}
 
 	if info.IsDir() {
-		err = os.RemoveAll(path)
+		if err = os.RemoveAll(path); err == nil {
+			return c.JSON(200, msg{"directory deleted successfully"})
+		}
 	} else {
-		err = os.Remove(path)
-	}
-	if err != nil {
-		c.Logger().Errorf("delete file or directory: %s", err)
-		return errInternal
+		if err = os.Remove(path); err == nil {
+			return c.JSON(200, msg{"file deleted successfully"})
+		}
 	}
 
-	return c.JSON(200, msg{"file deleted successfully"})
+	c.Logger().Errorf("delete %s: %s", path, err)
+	return errInternal
 }
 
 func handleMoveFile(c echo.Context) error {
-	user := c.Get("user").(*user)
-	if !user.Privilege.Upload || !user.Privilege.Delete {
-		return errForbidden
-	}
-
 	var act struct{ From, To string }
 	if err := c.Bind(&act); err != nil {
-		c.Logger().Errorf("bind act value: %s", err)
+		c.Logger().Error("bind act value: ", err)
 		return errInternal
 	}
 
-	act.From = filepath.Join(conf.Root, act.From)
-	act.To = filepath.Join(conf.Root, act.To)
-
-	if err := os.Rename(act.From, act.To); err != nil {
+	err := os.Rename(filepath.Join(diskRoot, act.From), filepath.Join(diskRoot, act.To))
+	if err != nil {
 		switch {
 		case os.IsExist(err):
 			return errExists
 		case os.IsNotExist(err):
 			return errNotExists
 		default:
-			c.Logger().Errorf("rename file: %s", err)
+			c.Logger().Error("rename file: ", err)
 			return errInternal
 		}
 	}

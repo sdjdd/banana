@@ -13,9 +13,11 @@ import (
 const version = "v0.0.1-beta"
 
 var (
-	used  int64
-	conf  config
-	users = make(userList)
+	diskSize int64
+	diskUsed int64
+	diskRoot string
+
+	users = userList{}
 )
 
 func main() {
@@ -24,25 +26,32 @@ func main() {
 	flag.StringVar(&staticDir, "s", "", "static directory")
 	flag.Parse()
 
-	var err error
-	if err = conf.read(confName); err != nil {
+	cfg, err := readConfig(confName)
+	if err != nil {
 		launchErr("read config file:", err)
 	}
-
-	used, err = getDirSize(conf.Root)
-	if err != nil {
+	if err = users.set(cfg.Users); err != nil {
+		launchErr("set users:", err)
+	}
+	if diskSize, err = parseSize(cfg.Size); err != nil {
+		launchErr("parse size:", err)
+	}
+	if diskUsed, err = getDirSize(cfg.Root); err != nil {
 		launchErr("get root size:", err)
 	}
+	diskRoot = cfg.Root
 
 	e := newEcho(staticDir)
-	e.Logger.Info("banana started on ", conf.Listen)
-	launchErr(e.Start(conf.Listen))
+	e.Logger.Info("banana started on ", cfg.Listen)
+	launchErr(e.Start(cfg.Listen))
 }
 
 func getDirSize(path string) (size int64, err error) {
 	err = filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
-		if !info.IsDir() {
-			size += info.Size()
+		if err == nil {
+			if !info.IsDir() {
+				size += info.Size()
+			}
 		}
 		return err
 	})

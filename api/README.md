@@ -23,7 +23,9 @@ Banana 使用 HTTP Basic authentication 进行用户认证，关于用户配置�
 
 ### 上传文件/创建目录
 
-**URL** : `http://banana-host/fs/:name?type=(file|dir)`
+根据 query string 中的 `dir` 判断是否为创建目录操作。
+
+**URL** : `http://banana-host/fs/:name?dir=(true|false)`
 
 **METHOD** : `POST`
 
