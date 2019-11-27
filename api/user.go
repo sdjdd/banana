@@ -7,9 +7,9 @@ import (
 
 type (
 	userPrivilege struct {
-		Download bool
-		Upload   bool
-		Delete   bool
+		Download bool `json:"download"`
+		Upload   bool `json:"upload"`
+		Delete   bool `json:"delete"`
 	}
 
 	user struct {

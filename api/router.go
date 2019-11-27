@@ -21,6 +21,8 @@ func loadRouters(e *echo.Echo) {
 
 	middlewareBasicAuth := middleware.BasicAuth(auth)
 
+	e.GET("/api/whoami", handleWhoAmI)
+
 	fs := e.Group("/fs", middlewareBasicAuth, middlewareParsePath)
 	{
 		fs.GET("/*", handleGetFile, verifyPrivilege(canDownload))
@@ -33,9 +35,6 @@ func loadRouters(e *echo.Echo) {
 		api.GET("/info", handleGetInfo)
 		api.POST("/mv", handleMoveFile, verifyPrivilege(canMove))
 	}
-
-	// prevent browser's basic auth dialog
-	e.GET("/api/auth/verify", handleVerifyAuth)
 }
 
 func auth(username, password string, c echo.Context) (bool, error) {

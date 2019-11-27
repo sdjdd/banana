@@ -28,15 +28,24 @@ type (
 		Size    int64  `json:"size"`
 		Used    int64  `json:"used"`
 	}
+
+	userInfo struct {
+		Username  string        `json:"username"`
+		Privilege userPrivilege `json:"privilege"`
+	}
 )
 
-func handleVerifyAuth(c echo.Context) error {
-	if usr, pwd, ok := c.Request().BasicAuth(); ok {
-		if _, ok = users.verify(usr, pwd); ok {
-			return c.NoContent(200)
+func handleWhoAmI(c echo.Context) error {
+	// For prevent browser's basic auth dialog, do not use basic auth middleware.
+	if uname, upass, ok := c.Request().BasicAuth(); ok {
+		if user, ok := users.verify(uname, upass); ok {
+			return c.JSON(200, userInfo{
+				Username:  uname,
+				Privilege: user.Privilege,
+			})
 		}
 	}
-	return c.NoContent(403)
+	return c.JSON(401, msg{"Unauthorized"})
 }
 
 func handleGetInfo(c echo.Context) error {
