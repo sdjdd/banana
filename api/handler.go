@@ -97,6 +97,13 @@ func handlePostFile(c echo.Context) error {
 	if path == diskRoot {
 		return errNoFilename
 	}
+	c.Logger().Infof("post file to %s", path)
+
+	body := c.Request().Body
+	defer func() {
+		io.Copy(ioutil.Discard, body)
+		body.Close()
+	}()
 
 	if dirInfo, err := os.Stat(filepath.Dir(path)); err != nil {
 		if os.IsNotExist(err) {
@@ -135,7 +142,6 @@ func handlePostFile(c echo.Context) error {
 		return errInternal
 	}
 
-	body := c.Request().Body
 	defer f.Close()
 
 	var copied int64
@@ -144,6 +150,7 @@ func handlePostFile(c echo.Context) error {
 		for {
 			written, err := io.CopyN(f, body, bufSize)
 			if copied += written; copied > freeSize {
+				c.Logger().Errorf("file is too big, free size is %d bytes", freeSize)
 				f.Close()
 				os.Remove(path)
 				return errInsufficient
