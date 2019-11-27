@@ -107,7 +107,7 @@ func handlePostFile(c echo.Context) error {
 			c.Logger().Error("create directory: ", err)
 			return errInternal
 		}
-		return c.JSON(200, msg{"directory created successfully"})
+		return c.JSON(200, msg{"Directory created successfully"})
 	}
 
 	var freeSize int64
@@ -155,7 +155,7 @@ func handlePostFile(c echo.Context) error {
 		}
 	}
 
-	return c.JSON(200, msg{"file uploaded successfully"})
+	return c.JSON(200, msg{"File uploaded successfully"})
 }
 
 func handleDelFile(c echo.Context) error {
@@ -175,11 +175,11 @@ func handleDelFile(c echo.Context) error {
 
 	if info.IsDir() {
 		if err = os.RemoveAll(path); err == nil {
-			return c.JSON(200, msg{"directory deleted successfully"})
+			return c.JSON(200, msg{"Directory deleted successfully"})
 		}
 	} else {
 		if err = os.Remove(path); err == nil {
-			return c.JSON(200, msg{"file deleted successfully"})
+			return c.JSON(200, msg{"File deleted successfully"})
 		}
 	}
 
@@ -207,5 +207,5 @@ func handleMoveFile(c echo.Context) error {
 		}
 	}
 
-	return c.JSON(200, msg{"file or directory moved successfully"})
+	return c.JSON(200, msg{"File or directory moved successfully"})
 }
