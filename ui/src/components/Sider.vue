@@ -8,7 +8,10 @@
       </MenuItem>
     </Menu>
     <div class="used-info">
-      <div class="title">已用 {{ usedText }}</div>
+      <div class="title">
+        <span>已用 {{ usedText }}</span>
+        <span class="refresh" @click="refreshUsed">刷新</span>
+      </div>
       <Progress status="normal" :percent="usedPercent" :stroke-width="6" hide-info />
     </div>
 
@@ -16,6 +19,7 @@
 </template>
 
 <script>
+import client from '../ajax-client'
 import { mapState } from 'vuex'
 import { humanSize } from '../utils'
 
@@ -38,6 +42,9 @@ export default {
     ])
   },
   methods: {
+    refreshUsed() {
+      client.info()
+    }
   }
 }
 </script>
@@ -50,8 +57,18 @@ export default {
   width: 100%;
 }
 .used-info .title {
+  cursor: default;
   position: relative;
   top: 8px;
   font-size: 12px;
+}
+.used-info .refresh {
+  display: inline-block;
+  position: absolute;
+  right: 0;
+}
+.used-info .refresh:hover {
+  cursor: pointer;
+  text-decoration: underline;
 }
 </style>

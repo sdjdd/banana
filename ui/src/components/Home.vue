@@ -10,14 +10,18 @@
       <Header :style="{backgroundColor: '#fff', padding: 0}">
         <MyHeader />
       </Header>
-      <Content :style="{padding: '0 16px 16px'}">
+      <Content :style="{
+        padding: '0 16px 16px',
+        display: 'flex',
+        flexDirection: 'column'
+      }">
         <Breadcrumb :style="{margin: '16px 0'}" separator=">">
           <BreadcrumbItem v-for="(dir, index) in dirStack" :key="dir.path">
             <a v-if="index < dirStack.length-1" href="javascript:;" @click="moveAbs(dir.path)">{{ dir.name }}</a>
             <span v-else>{{ dir.name }}</span>
           </BreadcrumbItem>
         </Breadcrumb>
-        <Card dis-hover>
+        <Card dis-hover style="height: 100%;">
           <div style="height: auto">
             <Table :columns="fileColumns" :data="files">
               <template slot-scope="{ row }" slot="name">

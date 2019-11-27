@@ -13,7 +13,7 @@ const client = {
     async login(username, password) {
         try {
             let config = { auth: { username, password } }
-            await this.axins.get('/api/auth/verify', config)
+            await this.axins.get('/api/whoami', config)
             this.axins = axios.create(config)
         } catch (err) {
             if (err.response.status === 403) {
@@ -52,7 +52,7 @@ const client = {
             .split('/')
             .filter(v => v !== '')
             .join('/')
-        this.axins.post('/' + path, file)
+        this.axins.post('/' + path, file).catch(err => console.error(err.response))
     }
 }
 
